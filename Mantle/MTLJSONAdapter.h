@@ -16,7 +16,7 @@
 @required
 
 /// Specifies how to map property keys to different key paths in JSON.
-///
+/// 指定不同的属性键值映射到 JSON key上
 /// Subclasses overriding this method should combine their values with those of
 /// `super`.
 ///

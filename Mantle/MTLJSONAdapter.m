@@ -91,6 +91,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 		return nil;
 	}
 
+	/// 循环遍历数组，然后将里面的 dict 转成 model
 	NSMutableArray *models = [NSMutableArray arrayWithCapacity:JSONArray.count];
 	for (NSDictionary *JSONDictionary in JSONArray){
 		MTLModel *model = [self modelOfClass:modelClass fromJSONDictionary:JSONDictionary error:error];
@@ -113,6 +114,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 	NSParameterAssert(models != nil);
 	NSParameterAssert([models isKindOfClass:NSArray.class]);
 
+	/// 循环遍历数组，然后将里面的 model 转成 dictionary
 	NSMutableArray *JSONArray = [NSMutableArray arrayWithCapacity:models.count];
 	for (MTLModel<MTLJSONSerializing> *model in models) {
 		NSDictionary *JSONDictionary = [self JSONDictionaryFromModel:model error:error];
@@ -140,11 +142,13 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 	_modelClass = modelClass;
 
+	/// 不同的属性键值
 	_JSONKeyPathsByPropertyKey = [modelClass JSONKeyPathsByPropertyKey];
 
 	NSSet *propertyKeys = [self.modelClass propertyKeys];
 
 	for (NSString *mappedPropertyKey in _JSONKeyPathsByPropertyKey) {
+		/// 指定的属性值，并在属性列表里
 		if (![propertyKeys containsObject:mappedPropertyKey]) {
 			NSAssert(NO, @"%@ is not a property of %@.", mappedPropertyKey, modelClass);
 			return nil;
@@ -152,6 +156,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 		id value = _JSONKeyPathsByPropertyKey[mappedPropertyKey];
 
+		/// 必须是字符串或者字符串数组
 		if ([value isKindOfClass:NSArray.class]) {
 			for (NSString *keyPath in value) {
 				if ([keyPath isKindOfClass:NSString.class]) continue;
@@ -165,6 +170,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 		}
 	}
 
+	/// 所有的keys 对应的  valueTransformers
 	_valueTransformersByPropertyKey = [self.class valueTransformersForModelClass:modelClass];
 
 	_JSONAdaptersByModelClass = [NSMapTable strongToStrongObjectsMapTable];
@@ -178,12 +184,14 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 	NSParameterAssert(model != nil);
 	NSParameterAssert([model isKindOfClass:self.modelClass]);
 
+	/// 1. 核对 class 类型
 	if (self.modelClass != model.class) {
 		MTLJSONAdapter *otherAdapter = [self JSONAdapterForModelClass:model.class error:error];
 
 		return [otherAdapter JSONDictionaryFromModel:model error:error];
 	}
 
+	/// 2. 将需要序列化的键值
 	NSSet *propertyKeysToSerialize = [self serializablePropertyKeys:[NSSet setWithArray:self.JSONKeyPathsByPropertyKey.allKeys] forModel:model];
 
 	NSDictionary *dictionaryValue = [model.dictionaryValue dictionaryWithValuesForKeys:propertyKeysToSerialize.allObjects];
@@ -193,16 +201,20 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 	__block NSError *tmpError = nil;
 
 	[dictionaryValue enumerateKeysAndObjectsUsingBlock:^(NSString *propertyKey, id value, BOOL *stop) {
+		/// 3. 获取对应 JSON key paths
 		id JSONKeyPaths = self.JSONKeyPathsByPropertyKey[propertyKey];
 
 		if (JSONKeyPaths == nil) return;
 
+		/// 4. 获取 value transformer
 		NSValueTransformer *transformer = self.valueTransformersByPropertyKey[propertyKey];
+		/// 5. 是否允许反向转换
 		if ([transformer.class allowsReverseTransformation]) {
 			// Map NSNull -> nil for the transformer, and then back for the
 			// dictionaryValue we're going to insert into.
 			if ([value isEqual:NSNull.null]) value = nil;
 
+			/// 6. 如果定义这个reverseTransformedValue:success:error:方法，转换错误处理，更加安全
 			if ([transformer respondsToSelector:@selector(reverseTransformedValue:success:error:)]) {
 				id<MTLTransformerErrorHandling> errorHandlingTransformer = (id)transformer;
 
@@ -213,10 +225,12 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 					return;
 				}
 			} else {
+				/// 7. 直接转换，如果返回 nil，则设置为 NSNull.null
 				value = [transformer reverseTransformedValue:value] ?: NSNull.null;
 			}
 		}
 
+		/// 8. 根据keyPath，分割键值，填充对象
 		void (^createComponents)(id, NSString *) = ^(id obj, NSString *keyPath) {
 			NSArray *keyPathComponents = [keyPath componentsSeparatedByString:@"."];
 
@@ -234,10 +248,11 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 		if ([JSONKeyPaths isKindOfClass:NSString.class]) {
 			createComponents(JSONDictionary, JSONKeyPaths);
-
+			/// 9. 将转换后的 dict 对象，设置为值
 			[JSONDictionary setValue:value forKeyPath:JSONKeyPaths];
 		}
 
+		/// 10. 如果是数组，遍历整个路径，将对应的值填充
 		if ([JSONKeyPaths isKindOfClass:NSArray.class]) {
 			for (NSString *JSONKeyPath in JSONKeyPaths) {
 				createComponents(JSONDictionary, JSONKeyPath);
@@ -283,6 +298,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 	NSMutableDictionary *dictionaryValue = [[NSMutableDictionary alloc] initWithCapacity:JSONDictionary.count];
 
+	/// 1. 获取 modelClass 上的 property keys
 	for (NSString *propertyKey in [self.modelClass propertyKeys]) {
 		id JSONKeyPaths = self.JSONKeyPathsByPropertyKey[propertyKey];
 
@@ -290,6 +306,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 		id value;
 
+		/// 2. 获取 JSON上的 value
 		if ([JSONKeyPaths isKindOfClass:NSArray.class]) {
 			NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
 
@@ -310,6 +327,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 			if (!success) return nil;
 		}
 
+		/// Json 上没有值
 		if (value == nil) continue;
 
 		@try {
@@ -319,6 +337,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 				// dictionary we're going to insert into.
 				if ([value isEqual:NSNull.null]) value = nil;
 
+				/// 3. 将 Json 上的 value 转换成预定义的值，比如：long 类型值转成 NSDate类型，字符串转成枚举类型
 				if ([transformer respondsToSelector:@selector(transformedValue:success:error:)]) {
 					id<MTLTransformerErrorHandling> errorHandlingTransformer = (id)transformer;
 
@@ -327,12 +346,14 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 					if (!success) return nil;
 				} else {
+					/// 直接转换值
 					value = [transformer transformedValue:value];
 				}
 
 				if (value == nil) value = NSNull.null;
 			}
 
+			/// 4. 将转换后的值与属性键关联
 			dictionaryValue[propertyKey] = value;
 		} @catch (NSException *ex) {
 			NSLog(@"*** Caught exception %@ parsing JSON key path \"%@\" from: %@", ex, JSONKeyPaths, JSONDictionary);
@@ -357,8 +378,10 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 		}
 	}
 
+	/// 5. 将 dictionary 转成 model 类型
 	id model = [self.modelClass modelWithDictionary:dictionaryValue error:error];
 
+	/// 6. KVC验证转换是否成功
 	return [model validate:error] ? model : nil;
 }
 
@@ -368,18 +391,23 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 	NSMutableDictionary *result = [NSMutableDictionary dictionary];
 
+	/// 遍历 modelClass 的所有的属性键值
 	for (NSString *key in [modelClass propertyKeys]) {
+		/// 键值名字 + JSONTransformer
 		SEL selector = MTLSelectorWithKeyPattern(key, "JSONTransformer");
+		/// 定义了这个方法
 		if ([modelClass respondsToSelector:selector]) {
 			IMP imp = [modelClass methodForSelector:selector];
 			NSValueTransformer * (*function)(id, SEL) = (__typeof__(function))imp;
 			NSValueTransformer *transformer = function(modelClass, selector);
 
+			/// 执行并存储
 			if (transformer != nil) result[key] = transformer;
 
 			continue;
 		}
 
+		/// 是否定义JSONTransformerForKey
 		if ([modelClass respondsToSelector:@selector(JSONTransformerForKey:)]) {
 			NSValueTransformer *transformer = [modelClass JSONTransformerForKey:key];
 
@@ -389,6 +417,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 			}
 		}
 
+		/// 没有定义上面两种方法，则获取属性结构
 		objc_property_t property = class_getProperty(modelClass, key.UTF8String);
 
 		if (property == NULL) continue;
@@ -400,15 +429,18 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 
 		NSValueTransformer *transformer = nil;
 
+		/// 如果属性类型是 类
 		if (*(attributes->type) == *(@encode(id))) {
 			Class propertyClass = attributes->objectClass;
 
 			if (propertyClass != nil) {
+				/// 执行 类名+JSONTransformer 进行转换
 				transformer = [self transformerForModelPropertiesOfClass:propertyClass];
 			}
 
 
 			// For user-defined MTLModel, try parse it with dictionaryTransformer.
+			/// 用户定义的 MTLModel，使用dictionaryTransformer解析
 			if (nil == transformer && [propertyClass conformsToProtocol:@protocol(MTLJSONSerializing)]) {
 				transformer = [self dictionaryTransformerWithModelClass:propertyClass];
 			}
@@ -482,7 +514,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 	return [MTLValueTransformer
 		transformerUsingForwardBlock:^ id (id JSONDictionary, BOOL *success, NSError **error) {
 			if (JSONDictionary == nil) return nil;
-			
+			/// 将 JSON dict 转成 model class object
 			if (![JSONDictionary isKindOfClass:NSDictionary.class]) {
 				if (error != NULL) {
 					NSDictionary *userInfo = @{
@@ -509,7 +541,8 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 		}
 		reverseBlock:^ NSDictionary * (id model, BOOL *success, NSError **error) {
 			if (model == nil) return nil;
-			
+
+			/// 将 model class object 转成 JSON dict
 			if (![model conformsToProtocol:@protocol(MTLModel)] || ![model conformsToProtocol:@protocol(MTLJSONSerializing)]) {
 				if (error != NULL) {
 					NSDictionary *userInfo = @{
@@ -558,6 +591,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 			}
 			
 			NSMutableArray *models = [NSMutableArray arrayWithCapacity:dictionaries.count];
+			/// 遍历所有的dict数组
 			for (id JSONDictionary in dictionaries) {
 				if (JSONDictionary == NSNull.null) {
 					[models addObject:NSNull.null];
@@ -577,7 +611,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 					*success = NO;
 					return nil;
 				}
-				
+				/// 将 JSON dict 转成 model
 				id model = [dictionaryTransformer transformedValue:JSONDictionary success:success error:error];
 				
 				if (*success == NO) return nil;
@@ -605,7 +639,8 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 				*success = NO;
 				return nil;
 			}
-			
+
+			/// 遍历所有的model数组
 			NSMutableArray *dictionaries = [NSMutableArray arrayWithCapacity:models.count];
 			for (id model in models) {
 				if (model == NSNull.null) {
@@ -626,7 +661,7 @@ NSString * const MTLJSONAdapterThrownExceptionErrorKey = @"MTLJSONAdapterThrownE
 					*success = NO;
 					return nil;
 				}
-				
+				/// 将 model 转成 JSON dict
 				NSDictionary *dict = [dictionaryTransformer reverseTransformedValue:model success:success error:error];
 				
 				if (*success == NO) return nil;

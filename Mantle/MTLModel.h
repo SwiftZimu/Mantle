@@ -21,9 +21,9 @@
 ///                                (like `NSCoding`) and equality, since it can
 ///                                be expected to stick around.
 typedef enum : NSUInteger {
-    MTLPropertyStorageNone,
-    MTLPropertyStorageTransitory,
-    MTLPropertyStoragePermanent,
+    MTLPropertyStorageNone,        /// 不包含
+    MTLPropertyStorageTransitory,  /// copy， dictionaryValue 使用，不可序列化
+    MTLPropertyStoragePermanent,   /// 序列化，永久存储
 } MTLPropertyStorage;
 
 /// This protocol defines the minimal interface that classes need to implement to

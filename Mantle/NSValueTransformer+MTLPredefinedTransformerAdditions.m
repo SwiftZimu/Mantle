@@ -304,16 +304,19 @@ NSString * const MTLBooleanValueTransformerName = @"MTLBooleanValueTransformerNa
 	}];
 }
 
+/// 将 dictionary 中的键值，映射到 value 上，或者反向转换
 + (NSValueTransformer *)mtl_valueMappingTransformerWithDictionary:(NSDictionary *)dictionary defaultValue:(id)defaultValue reverseDefaultValue:(id)reverseDefaultValue {
 	NSParameterAssert(dictionary != nil);
 	NSParameterAssert(dictionary.count == [[NSSet setWithArray:dictionary.allValues] count]);
 
 	return [MTLValueTransformer
 			transformerUsingForwardBlock:^ id (id <NSCopying> key, BOOL *success, NSError **error) {
+				/// 返回 value，没有则返回默认值
 				return dictionary[key ?: NSNull.null] ?: defaultValue;
 			}
 			reverseBlock:^ id (id value, BOOL *success, NSError **error) {
 				__block id result = nil;
+				/// 遍历返回 key, 没有返回反向转换默认值
 				[dictionary enumerateKeysAndObjectsUsingBlock:^(id key, id anObject, BOOL *stop) {
 					if ([value isEqual:anObject]) {
 						result = key;
